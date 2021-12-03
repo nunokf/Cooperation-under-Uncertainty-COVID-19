@@ -1,0 +1,496 @@
+---
+title: "A dual process approach to prosocial behaviour"
+author: "Nuno Fernandes"
+date: "23/11/2021"
+output:
+  rmarkdown::html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+### Import library
+```{r, results="hide", warning=FALSE, message=FALSE}
+packages <- c("dplyr", "tibble", "tidyr", "purrr", "FactoMineR", "ggplot2", "lm.beta", "olsrr", "rcompanion", "FSA", "caret", "tidyverse", "reticulate", "factoextra", "MASS", "ggeffects", "effects", "rio", "foreign", "Hmisc","reshape2", "misty", "lavaan")
+
+installed_packages <- packages %in% row.names(installed.packages())
+if (any(installed_packages == FALSE)) {
+  install.packages(packages[!installed.packages])
+}
+
+lapply(packages, library, character.only = TRUE)
+
+``` 
+
+### Read data
+```{r, results='hide', warning=FALSE, message=FALSE}
+setwd("~/2021/Artigo_Covid-19_Daniela")
+# import worksheets
+data_list <- import_list("df_cooperation_covid.xlsx")
+```
+
+### Clean tarefa principal
+```{r, results="hide", warning=FALSE, message=FALSE}
+
+# tarefa principal
+main_task <- data_list$task
+glimpse(main_task)
+
+# rename dv
+names(main_task)[which(names(main_task) == "Prosocial behavior")] <- "dv"
+
+# `Time pressure` as factor
+main_task$`Time pressure`<- factor(main_task$`Time pressure`, levels = c("0","1"))
+
+# Scenario recode
+main_task$Scenario[main_task$Scenario==1]<-"a"
+main_task$Scenario[main_task$Scenario==2]<-"b"
+main_task$Scenario[main_task$Scenario==3]<-"c"
+main_task$Scenario[main_task$Scenario==4]<-"d"
+
+# Scenario as factor
+main_task$Scenario <- factor(main_task$Scenario, levels = c("a","b","c","d"))
+
+# na.removal
+main_task<- main_task[!is.na(main_task$dv), ]
+main_task<- main_task[!is.na(main_task$`Time pressure`),]
+main_task<- main_task[!is.na(main_task$Scenario),]
+```
+
+### Clean risk/probability discount & merge
+```{r, results="hide", warning=FALSE, message=FALSE}
+# risk/probability discount 
+data_list$Discount$R2 <- as.numeric(as.character(data_list$Discount$R2))
+
+risk_tarefa <- data_list$`Discount`
+main_task$AUC = risk_tarefa[match(main_task$Code, risk_tarefa$Code),"AUC"]
+
+# rem outliers
+yout = main_task$AUC < 0.07
+
+#boxplot(main_task$AUC,
+  #ylab = "AUC"
+#)
+```
+
+### Clean SVO and merge
+```{r}
+svo <- data_list$`svo task`
+main_task$SVO = svo[match(main_task$Code, risk_tarefa$Code), "SVO"]
+main_task$SVO <- as.factor(main_task$SVO)
+```
+
+
+### COVID_Risk PCA 
+```{r, warning=FALSE, message=FALSE}
+
+# covid risk questionnaire
+covid<- data_list$` Subj Risk COVID-19`
+covid<-na.omit(covid)
+
+# rename col
+colnames(covid)[2]<-"v1"
+colnames(covid)[3]<-"v2"
+colnames(covid)[4]<-"v3"
+colnames(covid)[5]<-"v4"
+colnames(covid)[6]<-"v5"
+colnames(covid)[7]<-"v6"
+colnames(covid)[8]<-"v7"
+colnames(covid)[9]<-"v8"
+colnames(covid)[10]<-"v9"
+colnames(covid)[11]<-"v10"
+colnames(covid)[12]<-"v11"
+#names(covid)
+
+#pca
+pca <- PCA(covid[,3:12], graph=F)
+summary(pca,nbelements = 10, ncp = 3)
+get_eig(pca)
+
+fviz_screeplot(pca, addlabels = TRUE, ylim = c(0, 50))
+var <- get_pca_var(pca)
+head(var)
+fviz_pca_var(pca, col.var="contrib",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE 
+)
+```
+
+### CFA COVID-19 scale 
+```{r, warning=FALSE, message=FALSE}
+# cfa
+model<-'
+c1=~v2+v4+v9
+c2=~v3+v7+v8+v11
+c3=~v10+v5'
+fit<- cfa(model, data=covid)
+summary(fit, fit.measures=T,standardized=T)
+```
+
+### Merge COVID to main_task
+```{r, warning=FALSE, message=FALSE}
+# dimensions 
+
+covid$spread <- rowMeans(covid[,c("v2", "v4","v9")], na.rm=TRUE)
+
+covid$impact <- rowMeans(covid[,c("v3", "v7", "v8", "v11")], na.rm=TRUE)
+
+covid$distant_spread <- rowMeans(covid[,c("v10", "v5")], na.rm=TRUE)
+
+covid$impact_to_other <- covid$v1
+
+# merge to tarefa principal
+names(covid)[1]<-"Code"
+
+main_task$i1=covid[match(main_task$Code, covid$Code),"v1"]
+main_task$i2=covid[match(main_task$Code, covid$Code),"v2"]
+main_task$i3=covid[match(main_task$Code, covid$Code),"v3"]
+main_task$i4=covid[match(main_task$Code, covid$Code),"v4"]
+main_task$i5=covid[match(main_task$Code, covid$Code),"v5"]
+main_task$i6=covid[match(main_task$Code, covid$Code),"v6"]
+main_task$i7=covid[match(main_task$Code, covid$Code),"v7"]
+main_task$i8=covid[match(main_task$Code, covid$Code),"v8"]
+main_task$i9=covid[match(main_task$Code, covid$Code),"v9"]
+main_task$i10=covid[match(main_task$Code, covid$Code),"v10"]
+main_task$i11=covid[match(main_task$Code, covid$Code),"v11"]
+main_task$i12=covid[match(main_task$Code, covid$Code),"v12"]
+
+
+main_task$covid_spread = covid[match(main_task$Code, covid$Code),"spread"]
+main_task$covid_impact = covid[match(main_task$Code, covid$Code), "impact"]
+main_task$covid_distant_spread = covid[match(main_task$Code, covid$Code), "distant_spread"]
+main_task$covid_impact_to_other = covid[match(main_task$Code, covid$Code), "impact_to_other"]
+```
+
+### IRI clean & merge
+```{r, results="hide", warning=FALSE, message=FALSE}
+# IRI scale
+IRI<- data_list$`IRI task`
+#str(IRI)
+names(IRI)[1]<-"Code"
+#names(IRI)
+
+# merge to tarefa principal 
+main_task$iri_TP = IRI[match(main_task$Code, IRI$Code),"PT"]
+main_task$iri_PE = IRI[match(main_task$Code, IRI$Code),"EC"]
+main_task$iri_DP = IRI[match(main_task$Code, IRI$Code),"PD"]
+main_task$iri_F = IRI[match(main_task$Code, IRI$Code),"F"]
+#main_task$iri_E = IRI[match(main_task$Code, IRI$Code),"Empathy"]
+```
+
+### Preliminary Sociodemographics & merge
+```{r, results="hide", warning=FALSE, message=FALSE}
+# sociodemographic data 
+sociodemog<-data_list$`Socio-demographic `
+#names(sociodemog)
+names(sociodemog)[1]<-"Code"
+
+# merge to tarefa principal
+main_task$age = sociodemog[match(main_task$Code, IRI$Code),"Age"]
+main_task$gender = sociodemog[match(main_task$Code, IRI$Code),"Gender"]
+main_task$socioeconomic= sociodemog[match(main_task$Code, sociodemog$Code), "SES"]
+main_task$education = sociodemog[match(main_task$Code, sociodemog$Code), "Educational Qualifications"]
+main_task$job = sociodemog[match(main_task$Code, sociodemog$Code),"Profession"]
+
+# as.factor                                        
+main_task$gender<-factor(main_task$gender)
+main_task$socioeconomic <- factor(main_task$socioeconomic)
+main_task$education <- factor(main_task$education)
+main_task$job <- factor(main_task$job)
+main_task$phase<-factor(main_task$Phase)
+```
+
+### Exploratory plots
+
+### Interaction
+```{r,dev=c('png', 'tiff'), warning=FALSE, message=FALSE}
+xlabs <- c("Control", "Impact \n  Uncertainty", "Worst-Case", "Indirect \n  Transmission")
+
+ggplot(data=main_task,                     
+       aes(x=Scenario, 
+           y=dv, 
+           fill=`Time pressure`)) +                       
+  geom_boxplot() +                            
+  labs(y='Likelihood Of Going To Work') + xlab("Scenario") +                
+  theme_bw() + 
+    scale_x_discrete(labels= xlabs) +   
+  theme(axis.text.x = element_text(color = "black")) +
+  #removing legend title and renaming labels
+  scale_fill_discrete(name="",
+         labels=c("Without Time Limit","`Time pressure`")) + 
+   theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+```
+
+### Scenario
+```{r,dev=c('png', 'tiff'), warning=FALSE, message=FALSE}
+#create x labels
+xlabs <- c("Control", "Impact Uncertainty", "Worst-Case","Indirect Transmission")
+
+ggplot(data=main_task,                     
+       aes(x=Scenario, 
+           y=dv)) +                       
+  geom_boxplot(fill="seashell2") +                      
+  labs(y='Likelihood Of Going To Work') + xlab("Scenario") +
+   theme(axis.text.x = element_text(color = "black")) +
+    theme_bw() + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + 
+  scale_x_discrete(labels= xlabs) +  
+  theme(axis.text.x = element_text(color = "black"))
+```
+
+### Time pressure
+```{r,dev=c('png', 'tiff'), warning=FALSE, message=FALSE}
+xlabs<-c("Without Time Limit","`Time pressure`")
+
+ggplot(data=main_task,                     
+       aes(x=`Time pressure`, 
+           y=dv)) +                       
+  geom_boxplot(fill = "SKYblue") +
+  labs(y='Likelihood Of Going To Work') +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + 
+    scale_x_discrete(labels= xlabs) +
+  theme(axis.text.x = element_text(color = "black")) + 
+  theme_bw() + 
+   theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+  
+```
+
+## Statistical Analysis 
+
+### preprocessing
+```{r, warning=FALSE, message=FALSE}
+
+main_task$dv_factor<-factor(main_task$dv, ordered = T)
+#colnames(main_task)
+#main_task_2<-main_task[, c(1,2,3,18,25,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52)]
+
+
+main_task_2<-main_task[, c("Code","Time pressure","Scenario","dv","Phase","AUC","i1","i2","i3","i4","i5","i6","i7","i8","i9","i10", "i11", "covid_spread", "covid_impact", "covid_distant_spread","covid_impact_to_other", "iri_TP", "iri_PE", "iri_DP","iri_F","age", "gender", "socioeconomic", "education", "job", "phase", "dv_factor")]
+main_task_2_na.rem<- na.omit(main_task_2)
+
+#collapse education levels, since there were only 3 participants below 9th grade afert na's removal
+
+#highschool_or_below
+main_task_2_na.rem$education[main_task_2_na.rem$education==2]<-"2"
+main_task_2_na.rem$education[main_task_2_na.rem$education==3]<-"2"
+main_task_2_na.rem$education[main_task_2_na.rem$education==4]<-"2"
+
+#bachelor_or_higher
+main_task_2_na.rem$education[main_task_2_na.rem$education==5]<-"3"
+main_task_2_na.rem$education[main_task_2_na.rem$education==6]<-"3"
+main_task_2_na.rem$education[main_task_2_na.rem$education==7]<-"3"
+
+#collapse low and moderate/low socioeconomic levels, since there were only 5 participants with low socioeconomic levels
+
+main_task_2_na.rem$socioeconomic[main_task_2_na.rem$socioeconomic==1]<-"1"
+main_task_2_na.rem$socioeconomic[main_task_2_na.rem$socioeconomic==2]<-"1"
+main_task_2_na.rem$socioeconomic[main_task_2_na.rem$socioeconomic==3]<-"2"
+main_task_2_na.rem$socioeconomic[main_task_2_na.rem$socioeconomic==4]<-"3"
+
+main_task_2_na.rem$job[main_task_2_na.rem$job==1]<-"1"
+main_task_2_na.rem$job[main_task_2_na.rem$job==2]<-"2"
+main_task_2_na.rem$job[main_task_2_na.rem$job==3]<-"3"
+main_task_2_na.rem$job[main_task_2_na.rem$job==4]<-"4"
+main_task_2_na.rem$job[main_task_2_na.rem$job==6]<-"6"
+
+#SVO for ORDINAL LR
+main_task_3 <- main_task[, c("Code","Time pressure","Scenario","dv","Phase","AUC","i1","i2","i3","i4","i5","i6","i7","i8","i9","i10", "i11", "covid_spread", "covid_impact", "covid_distant_spread","covid_impact_to_other", "iri_TP", "iri_PE", "iri_DP","iri_F","age", "gender", "socioeconomic", "education", "job", "phase", "dv_factor", "SVO")]
+
+main_task_3_na.rem<-na.omit(main_task_3)
+```
+
+### fit model (dv ~ `Time pressure`*Scenario + phase)
+```{r, warning=FALSE, message=FALSE}
+data_olr <- main_task[, c("Time pressure", "Scenario", "phase", "dv_factor")]
+#data_olr$phase <- data_olr$Phase
+
+m10<- polr(dv_factor ~`Time pressure` + Scenario + phase, data= data_olr, Hess=TRUE)
+summary(m10)
+
+ctable <- coef(summary(m10))
+p <- pnorm(abs(ctable[, "t value"]), lower.tail = F) * 2
+ctable <- cbind(ctable, "p value" = p)
+ctable
+ci <- confint(m10)
+exp(cbind(OR = coef(m10), ci))
+```
+### Ordinal Logistic Regression (other variables) 254 participants
+```{r, warning=FALSE, message=FALSE}
+m <- polr(dv_factor ~  AUC + covid_distant_spread + covid_impact_to_other + covid_spread + covid_impact + iri_TP + iri_PE + iri_DP + iri_F + age + gender + socioeconomic, data= main_task_2_na.rem, Hess=TRUE)
+summary(m)
+ctable <- coef(summary(m))
+p <- pnorm(abs(ctable[, "t value"]), lower.tail = FALSE) * 2
+ctable <- cbind(ctable, "p value" = p)
+ctable
+#ci <- confint(m)
+exp(cbind("Odds ratio" = coef(m), confint.default(m, level = 0.95)))
+#exp(coef(m))
+
+```
+
+
+### kruskal-wallis 
+```{r message=FALSE, warning=FALSE}
+
+#8 conditions (Scenario*`Time pressure`)
+dataset <- mutate(main_task_2_na.rem,
+        newvar = case_when(
+                Scenario ==  "a" & `Time pressure`== "0" ~  1, 
+                Scenario ==  "b" & `Time pressure`== "0" ~  2,
+                Scenario ==  "c" & `Time pressure`== "0" ~  3,
+                Scenario ==  "d" & `Time pressure`== "0" ~  4,
+                Scenario ==  "a" & `Time pressure`== "1" ~  5,
+                Scenario ==  "b" & `Time pressure`== "1" ~  6,
+                Scenario ==  "c" & `Time pressure`== "1" ~  7,
+                Scenario ==  "d" & `Time pressure`== "1" ~  8,
+               TRUE ~ NA_real_ # This is for all other values 
+             ))                    # not covered by the above.
+
+dataset$newvar<- factor(dataset$newvar)
+
+#Differences for each variable between experimental conditions
+
+
+fit <- lapply(dataset[,c("covid_impact_to_other", "gender", "education", "socioeconomic")], function(y) kruskal.test(y ~ newvar, data = dataset))
+fit
+```
+### Kruskal-wallis for SVO
+```{r}
+dataset2 <- mutate(main_task_3_na.rem,
+        newvar = case_when(
+                Scenario ==  "a" & `Time pressure`== "0" ~  1, 
+                Scenario ==  "b" & `Time pressure`== "0" ~  2,
+                Scenario ==  "c" & `Time pressure`== "0" ~  3,
+                Scenario ==  "d" & `Time pressure`== "0" ~  4,
+                Scenario ==  "a" & `Time pressure`== "1" ~  5,
+                Scenario ==  "b" & `Time pressure`== "1" ~  6,
+                Scenario ==  "c" & `Time pressure`== "1" ~  7,
+                Scenario ==  "d" & `Time pressure`== "1" ~  8,
+               TRUE ~ NA_real_ # This is for all other values 
+             ))                    # not covered by the above.
+
+kruskal.test(SVO~newvar, data = dataset2)
+
+```
+### Dunn post-hoc with bonferroni correction
+```{r}
+#post-hoc socioeconomic
+dataset$socioeconomic<- as.numeric(dataset$socioeconomic)
+fit2<- dunnTest(dataset$socioeconomic~dataset$newvar, method = dunn.test::p.adjustment.methods[c(4,
+  2:3, 5:8, 1)])
+fit2 
+  
+```
+
+### Anova
+```{r}
+#Differences for each variable between experimental conditions
+
+fit <- lapply(dataset[,c("age", "AUC","covid_distant_spread", "covid_spread", "covid_impact", "iri_TP", "iri_PE", "iri_DP", "iri_F")], function(y) summary(aov(y ~ Scenario, data = dataset)))
+
+fit
+```
+### OLR Plot
+```{python, include=F}
+df = r.main_task
+df.dtypes
+```
+
+```{python}
+import pandas as pd 
+import seaborn as sns 
+import matplotlib as plt
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.svm import SVC
+from sklearn import svm
+from sklearn.neural_network import MLPClassifier
+from sklearn.metrics import confusion_matrix, classification_report
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import scale 
+from sklearn import decomposition
+from matplotlib import pyplot as plt
+import plotly.express as px
+import numpy as np
+from sklearn.model_selection import cross_val_score, StratifiedKFold, KFold
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score
+from sklearn.model_selection import GridSearchCV
+import statsmodels.formula.api as smf
+import textwrap
+import scipy.stats as stats
+```
+
+```{python}
+predict, validate = train_test_split(df, test_size=0.2, random_state=42)
+```
+```{python}
+mod = smf.ols(formula='dv ~ i2 + i3 + i4 + i5 + i6 + i7 + i8 + i9 + i10+i11', data=df)
+
+fit = mod.fit()
+fit.summary()
+
+```
+
+```{python}
+mod_discovery = smf.ols(formula='dv ~ i2 + i3 + i4 + i5 + i6 + i7 + i8 + i9 + i10 + i11', data=predict)
+
+res_discovery = mod_discovery.fit()
+res_discovery.summary()
+
+```
+
+```{python, include = F}
+mod_validation = smf.ols(formula='dv ~ i2 + i3 + i4 + i5 + i6 + i7 + i8 + i9 + i10 + i11', data=validate)
+
+res_validation = mod_validation.fit()
+```
+
+```{python}
+names = ['How likely do you think you are to catch the virus','How badly do you think you will be affected economically if you specifically catch the virus? (for example through loss of work)','How likely do you think it is that a loved one will become infected?','How likely do you think the average person in your state is to become infected?','If you do contract the virus, how likely do you think it is that you will pass it on to someone else','How badly do you think your health will be affected if you do catch the virus?','How badly do you think you will be affected by the global effects of the virus (for example economic recession, reduced healthcare capacity)?','How likely do you think the average person in your neighbourhood is to become infected?','How likely do you think the average person in your country is to become infected?','If you do contract the virus and pass it on to someone else, how badly do you think they would be affected?']
+
+
+# font type & size
+plt.rcParams.update({'font.size': 12})
+plt.rcParams["font.family"] = "Times New Roman"
+
+fig, ax = plt.subplots(figsize=(10,14))
+fig.set_tight_layout(True)
+
+# DISCOVERY
+ax.axvline(0, linestyle=':', color='gray', linewidth=2)
+
+# Points and error bars
+ax.errorbar(y=np.arange(len(res_discovery.params[1:])) - 0.1, x=res_discovery.params[1:], 
+             xerr=np.abs(res_discovery.conf_int().values[1:, :] - res_discovery.params[1:, np.newaxis]).T, 
+             color='black', linewidth=2, fmt='^', label='estimation set')
+
+ax.errorbar(y=np.arange(len(res_validation.params[1:])) + 0.1, x=res_validation.params[1:], 
+             xerr=np.abs(res_validation.conf_int().values[1:, :] - res_validation.params[1:, np.newaxis]).T, 
+             color='gray', linewidth=2, fmt='s', label='validation set')
+
+# Labels
+ax.set_yticks(range(len(names)))
+ax.set_yticklabels(['\n'.join(textwrap.wrap(q, 60, break_long_words=False)) for q in names])
+
+## Titles 
+ax.set_xlabel('Regression coefficient (+/- 95% CI)')
+ax.legend(loc=7)
+
+plt.show()
+
+##save
+from PIL import Image
+from io import BytesIO
+# (1) save the image in memory in tiff format
+png1 = BytesIO()
+fig.savefig(png1, format= 'png')
+
+# (2) load this image into PIL
+png2 = Image.open(png1)
+
+# (3) save as TIFF
+png2.save('glm_Daniela_graph3.tiff')
+png1.close()
+```
